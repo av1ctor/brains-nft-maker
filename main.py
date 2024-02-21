@@ -54,14 +54,14 @@ class LookupOp(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        settings = scene.na_settings
+        traits_props = scene.na_traits_props
 
-        settings.clear()
+        traits_props.clear()
 
         traits = Utils.find_traits(scene)
 
         for obj in traits:
-            item = settings.add()
+            item = traits_props.add()
             item.name = obj.name
     
         return {'FINISHED'}
@@ -160,13 +160,14 @@ class MainPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        traits_props = scene.na_traits_props
 
         # rarities
         layout.label(text="Traits:")
-        for i in range(len(scene.na_settings)):
+        for i in range(len(traits_props)):
             row = layout.row()
-            row.label(text=scene.na_settings[i].name)
-            row.prop(scene.na_settings[i], 'probability')
+            row.label(text=traits_props[i].name)
+            row.prop(traits_props[i], 'probability')
 
         row = layout.row()
         row.separator()
@@ -185,6 +186,8 @@ class MainPanel(bpy.types.Panel):
         col = split.column()
         col.operator("wm.clean_up")
 
+        col = split.column(align=True)
+
 
 def register():
     bpy.utils.register_class(LookupOp)
@@ -192,7 +195,7 @@ def register():
     bpy.utils.register_class(CleanupOp)
     
     bpy.utils.register_class(TraitProps)
-    bpy.types.Scene.na_settings = bpy.props.CollectionProperty(type=TraitProps)
+    bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
     
     bpy.utils.register_class(MainPanel)
 
