@@ -5,105 +5,56 @@ import json
 
 ## https://docs.blender.org/api/4.0
 
-class Utils():
-    def find_traits(scene):
+class ObjectHelper():
+    def find_by_collection_suffix(scene, suffix):
         traits = []
         for coll in scene.collection.children:
-            if coll.name.lower().endswith("traits"):
+            if coll.name.lower().endswith(suffix):
                 for obj in coll.objects:
                     traits.append(obj)
         return traits
 
-    def hide_objects(traits):
-        for obj in traits:
+    def hide_objects(objects):
+        for obj in objects:
             obj.hide_render = True
             obj.hide_set(True)
             
-    def insert_hide_keyframe(obj, hide, frame_num):
+                    
+class ActionsHelper:
+    def delete_actions(objects):
+        for action in bpy.data.actions:
+            for obj in objects:
+                if action.name.startswith(obj.name):
+                    bpy.data.actions.remove(action)
+                    break
+                
+class KeyframeHelper:
+    def insert_hide_render(obj, hide, frame_num):
         obj.hide_render = hide
         obj.hide_set(hide)
         obj.keyframe_insert(data_path='hide_render', frame=frame_num)
 
-    def insert_all_hide_keyframes(traits, hide, frame_num):
-        for obj in traits:
-            Utils.insert_hide_keyframe(obj, hide, frame_num)
+    def insert_all_hide_render(objects, hide, frame_num):
+        for obj in objects:
+            KeyframeHelper.insert_hide_render(obj, hide, frame_num)
     
-    def delete_all_hide_keyframes(scene, traits):
+    def delete_all_hide_render(scene, objects):
         actions = []
         if bpy.data.actions:
             frame_ranges = [action.frame_range for action in bpy.data.actions]
             actions = sorted(set([frame for frames in frame_ranges for frame in frames]))
 
-        for obj in traits:
+        for obj in objects:
             if len(actions) >= 1:
                 for frame in range(0, int(actions[-1] + 1)):
                     try:
                         obj.keyframe_delete(data_path='hide_render', frame=frame)
                     except:
                         continue
-                    
-    def delete_actions(traits):
-        for action in bpy.data.actions:
-            for trait in traits:
-                if action.name.startswith(trait.name):
-                    bpy.data.actions.remove(action)
-                    break
-
-class LookupOp(bpy.types.Operator):
-    bl_idname = "wm.lookup_traits"
-    bl_label = "Lookup Traits"
-
-    def execute(self, context):
-        scene = context.scene
-        traits_props = scene.na_traits_props
-
-        traits_props.clear()
-
-        traits = Utils.find_traits(scene)
-
-        for obj in traits:
-            item = traits_props.add()
-            item.name = obj.name
-    
-        return {'FINISHED'}
-
-class GenerateOp(bpy.types.Operator):
-    bl_idname = "wm.generate_nfts"
-    bl_label = "Generate NFT's"
-
-    def execute(self, context):
-        scene = context.scene
-        settings = scene.na_settings
-        
-        bpy.ops.object.select_all(action='DESELECT')
-        
-        traits = Utils.find_traits(scene)
-
-        Utils.hide_objects(traits)
-        Utils.delete_actions(traits)
-        Utils.delete_all_hide_keyframes(scene, traits)
-        
-        num_frames = settings.qtd
-
-        scene.frame_start = 1
-        scene.frame_end = num_frames
-
-        Utils.insert_all_hide_keyframes(traits, True, 0)
-        
-        scene.frame_set(1)
-        for num in range(1, num_frames+1):
-            trait = random.choice(traits)
-            Utils.insert_hide_keyframe(trait, False, num)
-            if settings.gen_models:
-                self.export_scene(num)
-            Utils.insert_hide_keyframe(trait, True, num+1)
-
-        Utils.hide_objects(traits)
-
-        return {'FINISHED'}
-    
-    def export_scene(self, num):
-        models_path = bpy.path.abspath('//models/' + str(num))
+                
+class ExportHelper():
+    def export_gltf(num):
+        models_path = bpy.path.abspath('//models/' + format(num, '03'))
         print(models_path)
         bpy.ops.export_scene.gltf(
             filepath=models_path, 
@@ -132,6 +83,59 @@ class GenerateOp(bpy.types.Operator):
             export_lights=False,
             export_cameras=False)
 
+class LookupOp(bpy.types.Operator):
+    bl_idname = "wm.lookup_traits"
+    bl_label = "Lookup Traits"
+
+    def execute(self, context):
+        scene = context.scene
+        traits_props = scene.na_traits_props
+
+        traits_props.clear()
+
+        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
+
+        for obj in traits:
+            item = traits_props.add()
+            item.name = obj.name
+    
+        return {'FINISHED'}
+
+class GenerateOp(bpy.types.Operator):
+    bl_idname = "wm.generate_nfts"
+    bl_label = "Generate NFT's"
+
+    def execute(self, context):
+        scene = context.scene
+        settings = scene.na_settings
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        
+        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
+
+        ObjectHelper.hide_objects(traits)
+        ActionsHelper.delete_actions(traits)
+        KeyframeHelper.delete_all_hide_render(scene, traits)
+        
+        num_frames = settings.qtd
+
+        scene.frame_start = 1
+        scene.frame_end = num_frames
+
+        KeyframeHelper.insert_all_hide_render(traits, True, 0)
+        
+        scene.frame_set(1)
+        for num in range(1, num_frames+1):
+            trait = random.choice(traits)
+            KeyframeHelper.insert_hide_render(trait, False, num)
+            if settings.gen_models:
+                ExportHelper.export_gltf(num)
+            KeyframeHelper.insert_hide_render(trait, True, num+1)
+
+        ObjectHelper.hide_objects(traits)
+
+        return {'FINISHED'}
+    
 class CleanupOp(bpy.types.Operator):
     bl_idname = "wm.clean_up"
     bl_label = "Clean up"
@@ -142,11 +146,11 @@ class CleanupOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        traits = Utils.find_traits(scene)
+        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
 
-        Utils.hide_objects(traits)
-        Utils.delete_actions(traits)
-        Utils.delete_all_hide_keyframes(scene, traits)
+        ObjectHelper.hide_objects(traits)
+        ActionsHelper.delete_actions(traits)
+        KeyframeHelper.delete_all_hide_render(scene, traits)
         
         return {'FINISHED'}
 
