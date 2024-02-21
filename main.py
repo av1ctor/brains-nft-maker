@@ -21,6 +21,7 @@ class Utils():
             
     def insert_hide_keyframe(obj, hide, frame_num):
         obj.hide_render = hide
+        obj.hide_set(hide)
         obj.keyframe_insert(data_path='hide_render', frame=frame_num)
 
     def insert_all_hide_keyframes(traits, hide, frame_num):
@@ -81,14 +82,21 @@ class GenerateOp(bpy.types.Operator):
         Utils.hide_objects(traits)
         Utils.delete_actions(traits)
         Utils.delete_all_hide_keyframes(scene, traits)
+        
+        num_frames = settings.qtd
+
+        scene.frame_start = 1
+        scene.frame_end = num_frames
+
         Utils.insert_all_hide_keyframes(traits, True, 0)
         
         scene.frame_set(1)
-        for num in range(1, 21):
+        for num in range(1, num_frames+1):
             trait = random.choice(traits)
             Utils.insert_hide_keyframe(trait, False, num)
+            if settings.gen_models:
+                self.export_scene(num)
             Utils.insert_hide_keyframe(trait, True, num+1)
-            #self.export_scene(num)
 
         Utils.hide_objects(traits)
 
@@ -146,6 +154,10 @@ class TraitProps(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="Unknown")
     probability: bpy.props.FloatProperty(name="Probability", default=10.0)
 
+class SettingsProps(bpy.types.PropertyGroup):
+    qtd: bpy.props.IntProperty(name="", default=0)
+    gen_models: bpy.props.BoolProperty(name="", default=True)
+
 class MainPanel(bpy.types.Panel):
     bl_label = "Neural Arena NFT Maker"
     bl_idname = "SCENE_PT_layout"
@@ -160,15 +172,30 @@ class MainPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        traits_props = scene.na_traits_props
 
         # rarities
+        traits_props = scene.na_traits_props
         layout.label(text="Traits:")
         for i in range(len(traits_props)):
             row = layout.row()
             row.label(text=traits_props[i].name)
             row.prop(traits_props[i], 'probability')
 
+        row = layout.row()
+        row.separator()
+
+        # settings
+        settings = scene.na_settings
+        layout.label(text="Settings:")
+        
+        row = layout.row()
+        row.label(text="Quantity")
+        row.prop(settings, 'qtd')
+
+        row = layout.row()
+        row.label(text="Generate models")
+        row.prop(settings, 'gen_models')
+        
         row = layout.row()
         row.separator()
 
@@ -190,22 +217,26 @@ class MainPanel(bpy.types.Panel):
 
 
 def register():
+    bpy.utils.register_class(TraitProps)
+    bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
+
+    bpy.utils.register_class(SettingsProps)
+    bpy.types.Scene.na_settings = bpy.props.PointerProperty(type=SettingsProps)
+    
     bpy.utils.register_class(LookupOp)
     bpy.utils.register_class(GenerateOp)
     bpy.utils.register_class(CleanupOp)
-    
-    bpy.utils.register_class(TraitProps)
-    bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
     
     bpy.utils.register_class(MainPanel)
 
 
 def unregister():
     bpy.utils.unregister_class(MainPanel)
-    bpy.utils.unregister_class(TraitProps)
     bpy.utils.register_class(CleanupOp)
     bpy.utils.unregister_class(GenerateOp)
     bpy.utils.unregister_class(LookupOp)
+    bpy.utils.unregister_class(SettingsProps)
+    bpy.utils.unregister_class(TraitProps)
     
 if __name__ == "__main__":
     register()
