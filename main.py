@@ -1,6 +1,6 @@
 import bpy
 import random
-import math
+import re
 import json
 
 ## https://docs.blender.org/api/4.0
@@ -12,6 +12,9 @@ class ObjectHelper():
         for obj in objects:
             obj.hide_render = True
             obj.hide_set(True)
+            
+    def clear_name(name):
+        return re.sub('\.[0-9]+', '', name)
 
 class ActionHelper:
     def delete_actions(objects):
@@ -193,7 +196,7 @@ class ExportHelper():
             'model': num_s + '.glb',
             'attributes': list(
                 map(
-                    (lambda trait: {trait.group_name: trait.name}), 
+                    (lambda trait: {ObjectHelper.clear_name(trait.group_name): ObjectHelper.clear_name(trait.name)}), 
                     filter(
                         (lambda trait: not trait.name.lower().startswith("no ")), 
                         traits
@@ -378,11 +381,11 @@ class MainPanel(bpy.types.Panel):
             if trait.group_name != last_group:
                 last_group = trait.group_name
                 row = box.row()
-                row.label(text=trait.group_name, icon='GROUP')
+                row.label(text=ObjectHelper.clear_name(trait.group_name), icon='GROUP')
             
             if box != None:
                 row = box.row()
-                row.label(text=trait.name)
+                row.label(text=ObjectHelper.clear_name(trait.name))
                 row.prop(trait, 'probability')
 
         row = layout.row()
