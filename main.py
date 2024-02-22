@@ -12,15 +12,98 @@ class ObjectHelper():
         for obj in objects:
             obj.hide_render = True
             obj.hide_set(True)
-            
-                    
-class ActionsHelper:
+
+class ActionHelper:
     def delete_actions(objects):
         for action in bpy.data.actions:
             for obj in objects:
                 if action.name.startswith(obj.name):
                     bpy.data.actions.remove(action)
                     break
+
+class ModelHelper():
+    models = []
+    def find_all(scene):
+        for model in scene.collection.children['Models'].children:
+            models.append(model)
+            
+        return models
+
+class Trait:
+    def __init__(self, name, object, group_name, model_name):
+        self.name = name
+        self.object = object
+        self.group_name = group_name
+        self.model_name = model_name
+
+class TraitHelper:
+    def find_all_ex(scene):
+        models = {}
+        objects = []
+
+        for model in scene.collection.children['Models'].children:
+            models[model.name] = {
+                "model": model
+            }
+            
+            traits = None
+            for col in model.children:
+                if col.name.lower().startswith('traits'):
+                    traits = col
+                    break
+            
+            if traits != None:
+                for col in traits.children:
+                    for obj in col.objects:
+                        objects.append({
+                            "object": obj, 
+                            "collection": col, 
+                            "model": model
+                        })
+                        
+        return (models, objects)
+
+    def find_all(scene):
+        return list(
+            map(
+                (lambda item: item['object']), 
+                TraitHelper.find_all_ex(scene)[1]
+            )
+        )
+
+    def generate(qtd, traits_props, objects):
+        groups = {}
+        for prop in traits_props:
+            group = groups.get(prop.group)
+            if group == None:
+                groups[prop.group] = {
+                    "weights": [prop.probability], 
+                    "props": [prop], 
+                    "model": prop.model
+                }
+            else:
+                group["weights"].append(prop.probability)
+                group["props"].append(prop)
+
+        traits = []
+        for num in range(qtd):
+            obj_traits = []
+            for name, group in groups.items():
+                trait = random.choices(
+                    population=group['props'], 
+                    weights=group['weights']
+                )[0]
+                object = objects.get(trait.name)
+                obj_traits.append(Trait(
+                    trait.name, 
+                    object, 
+                    name,
+                    group['model']
+                ))
+                
+            traits.append(obj_traits)
+                
+        return traits
                 
 class KeyframeHelper:
     def insert_hide_render(obj, hide, frame_num):
@@ -98,83 +181,24 @@ class ExportHelper():
         f.write(json.dumps(props))
         f.close()
 
-class Trait:
-    def __init__(self, name, object, group_name, model_name):
-        self.name = name
-        self.object = object
-        self.group_name = group_name
-        self.model_name = model_name
-
-class TraitsHelper:
-    def find_all_ex(scene):
-        for model in scene.collection.children['Models'].children:
-            traits = model.children['Traits']
-        
-            objects = []
-            for col in traits.children:
-                for obj in col.objects:
-                    objects.append({
-                        "object": obj, 
-                        "collection": col, 
-                        "model": model
-                    })
-                    
-        return objects
-
-    def find_all(scene):
-        return list(
-            map(
-                (lambda item: item['object']), 
-                TraitsHelper.find_all_ex(scene)
-            )
-        )
-
-    def generate(qtd, traits_props, objects):
-        groups = {}
-        for prop in traits_props:
-            group = groups.get(prop.group)
-            if group == None:
-                groups[prop.group] = {
-                    "weights": [prop.probability], 
-                    "props": [prop], 
-                    "model": prop.model
-                }
-            else:
-                group["weights"].append(prop.probability)
-                group["props"].append(prop)
-
-        traits = []
-        for num in range(qtd):
-            obj_traits = []
-            for name, group in groups.items():
-                trait = random.choices(
-                    population=group['props'], 
-                    weights=group['weights']
-                )[0]
-                object = objects.get(trait.name)
-                obj_traits.append(Trait(
-                    trait.name, 
-                    object, 
-                    name,
-                    group['model']
-                ))
-                
-            traits.append(obj_traits)
-                
-        return traits
-        
-
 class LookupOp(bpy.types.Operator):
     bl_idname = "wm.lookup"
     bl_label = "Lookup"
 
     def execute(self, context):
         scene = context.scene
+        models_props = scene.na_models
         traits_props = scene.na_traits
 
+        models_props.clear()
         traits_props.clear()
 
-        traits = TraitsHelper.find_all_ex(scene)
+        (models, traits) = TraitHelper.find_all_ex(scene)
+        
+        for name in models.keys():
+            item = models_props.add()
+            item.name = name
+            item.probability = 100.0 / len(models)
         
         groups = {}
         for trait in traits:
@@ -208,7 +232,7 @@ class GenerateOp(bpy.types.Operator):
         
         num_frames = settings.qtd
         
-        nfts_traits = TraitsHelper.generate(num_frames, traits_props, scene.objects)
+        nfts_traits = TraitHelper.generate(num_frames, traits_props, scene.objects)
         
         return {'FINISHED'}
 
@@ -224,10 +248,10 @@ class ExportOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        all_traits = TraitsHelper.find_all(scene)
+        all_traits = TraitHelper.find_all(scene)
 
         ObjectHelper.hide_objects(all_traits)
-        ActionsHelper.delete_actions(all_traits)
+        ActionHelper.delete_actions(all_traits)
         KeyframeHelper.delete_all_hide_render(scene, all_traits)
         
         num_frames = settings.qtd
@@ -242,7 +266,6 @@ class ExportOp(bpy.types.Operator):
         num = 1
         for traits in nfts_traits:
             for trait in traits:
-                print(trait.name)
                 KeyframeHelper.insert_hide_render(trait.object, False, num)
             
             if settings.export_traits:
@@ -270,24 +293,28 @@ class CleanupOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        traits = TraitsHelper.find_all(scene)
+        traits = TraitHelper.find_all(scene)
 
         ObjectHelper.hide_objects(traits)
-        ActionsHelper.delete_actions(traits)
+        ActionHelper.delete_actions(traits)
         KeyframeHelper.delete_all_hide_render(scene, traits)
         
         return {'FINISHED'}
+
+class SettingsProps(bpy.types.PropertyGroup):
+    qtd: bpy.props.IntProperty(name="", default=0)
+    export_models: bpy.props.BoolProperty(name="", default=True)
+    export_traits: bpy.props.BoolProperty(name="", default=True)
+
+class ModelProps(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Name", default="")
+    probability: bpy.props.FloatProperty(name="Probability", default=0.0)
 
 class TraitProps(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="")
     probability: bpy.props.FloatProperty(name="Probability", default=0.0)
     group: bpy.props.StringProperty(name="Group", default="")
     model: bpy.props.StringProperty(name="Model", default="")
-
-class SettingsProps(bpy.types.PropertyGroup):
-    qtd: bpy.props.IntProperty(name="", default=0)
-    export_models: bpy.props.BoolProperty(name="", default=True)
-    export_traits: bpy.props.BoolProperty(name="", default=True)
 
 class MainPanel(bpy.types.Panel):
     bl_label = "Neural Arena NFT Maker"
@@ -303,19 +330,22 @@ class MainPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        models_props = scene.na_models
+        traits_props = scene.na_traits
 
         # rarities
-        traits_props = scene.na_traits
         layout.label(text="Models:")
         last_model = ''
         last_group = ''
-        for i in range(len(traits_props)):
-            trait = traits_props[i]
-            
+        for trait in traits_props:
             if trait.model != last_model:
                 last_model = trait.model
-                row = layout.row()
-                row.label(text=trait.model, icon='OBJECT_DATA')
+                row = layout.split()
+                col = row.column()
+                col.label(text=trait.model, icon='OBJECT_DATA')
+                col = row.column()
+                model = next((item for item in models_props if item.name == trait.model), None)
+                col.prop(model, 'probability')
                 box = layout.box()
                 last_group = ''
                 
@@ -326,7 +356,7 @@ class MainPanel(bpy.types.Panel):
                 
             row = box.row()
             row.label(text=trait.name)
-            row.prop(traits_props[i], 'probability')
+            row.prop(trait, 'probability')
 
         row = layout.row()
         row.separator()
@@ -367,14 +397,15 @@ class MainPanel(bpy.types.Panel):
         col = split.column(align=True)
         col.operator("wm.clean_up")
 
-classes = [TraitProps, SettingsProps, LookupOp, GenerateOp, ExportOp, CleanupOp, MainPanel]
+classes = [SettingsProps, ModelProps, TraitProps, LookupOp, GenerateOp, ExportOp, CleanupOp, MainPanel]
 
 def register():
     for klass in classes:
         bpy.utils.register_class(klass)
     
-    bpy.types.Scene.na_traits = bpy.props.CollectionProperty(type=TraitProps)
     bpy.types.Scene.na_settings = bpy.props.PointerProperty(type=SettingsProps)
+    bpy.types.Scene.na_models = bpy.props.CollectionProperty(type=ModelProps)
+    bpy.types.Scene.na_traits = bpy.props.CollectionProperty(type=TraitProps)
 
 def unregister():
     for klass in classes:
