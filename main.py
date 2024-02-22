@@ -100,7 +100,15 @@ class ExportHelper():
             'name': '#' + num_s,
             'image': num_s + '.jpg',
             'model': num_s + '.glb',
-            'attributes': list(map((lambda trait: trait.name), traits))
+            'attributes': list(
+                filter(
+                    (lambda name: not name.lower().startswith("no ")), 
+                    map(
+                        (lambda trait: trait.name), 
+                        traits
+                    )
+                )
+            )
         }
         f.write(json.dumps(props))
         f.close()
