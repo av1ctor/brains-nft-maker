@@ -8,22 +8,6 @@ import json
 nfts_traits = []
 
 class ObjectHelper():
-    def find_by_collection_suffix_ex(scene, suffix):
-        objects = []
-        for coll in scene.collection.children:
-            if coll.name.lower().endswith(suffix):
-                for obj in coll.objects:
-                    objects.append({"object": obj, "collection": coll})
-        return objects
-
-    def find_by_collection_suffix(scene, suffix):
-        return list(
-            map(
-                (lambda item: item['object']), 
-                ObjectHelper.find_by_collection_suffix_ex(scene, suffix)
-            )
-        )
-
     def hide_objects(objects):
         for obj in objects:
             obj.hide_render = True
@@ -101,10 +85,10 @@ class ExportHelper():
             'image': num_s + '.jpg',
             'model': num_s + '.glb',
             'attributes': list(
-                filter(
-                    (lambda name: not name.lower().startswith("no ")), 
-                    map(
-                        (lambda trait: trait.name), 
+                map(
+                    (lambda trait: {trait.group_name: trait.name}), 
+                    filter(
+                        (lambda trait: not trait.name.lower().startswith("no ")), 
                         traits
                     )
                 )
@@ -114,11 +98,29 @@ class ExportHelper():
         f.close()
 
 class Trait:
-    def __init__(self, name, object):
+    def __init__(self, name, object, group_name):
         self.name = name
         self.object = object
+        self.group_name = group_name
 
 class TraitsHelper:
+    def find_by_model_ex(scene, name):
+        traits = scene.collection.children['Models'].children[name].children['Traits']
+        
+        objects = []
+        for coll in traits.children:
+            for obj in coll.objects:
+                objects.append({"object": obj, "collection": coll})
+        return objects
+
+    def find_by_model(scene, name):
+        return list(
+            map(
+                (lambda item: item['object']), 
+                TraitsHelper.find_by_model_ex(scene, name)
+            )
+        )
+
     def generate(qtd, traits_props, objects):
         groups = {}
         for prop in traits_props:
@@ -132,10 +134,10 @@ class TraitsHelper:
         traits = []
         for num in range(qtd):
             obj_traits = []
-            for k, group in groups.items():
+            for group_name, group in groups.items():
                 trait = random.choices(population=group['props'], weights=group['weights'])[0]
                 object = objects.get(trait.name)
-                obj_traits.append(Trait(trait.name, object))
+                obj_traits.append(Trait(trait.name, object, group_name))
                 
             traits.append(obj_traits)
                 
@@ -152,7 +154,7 @@ class LookupOp(bpy.types.Operator):
 
         traits_props.clear()
 
-        traits = ObjectHelper.find_by_collection_suffix_ex(scene, "traits")
+        traits = TraitsHelper.find_by_model_ex(scene, "Robot")
         
         groups = {}
         for trait in traits:
@@ -199,7 +201,7 @@ class ExportOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        all_traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
+        all_traits = TraitsHelper.find_by_model(scene, "Robot")
 
         ObjectHelper.hide_objects(all_traits)
         ActionsHelper.delete_actions(all_traits)
@@ -217,6 +219,7 @@ class ExportOp(bpy.types.Operator):
         num = 1
         for traits in nfts_traits:
             for trait in traits:
+                print(trait.name)
                 KeyframeHelper.insert_hide_render(trait.object, False, num)
             
             if settings.export_traits:
@@ -244,7 +247,7 @@ class CleanupOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
+        traits = TraitsHelper.find_by_model(scene, "Robot")
 
         ObjectHelper.hide_objects(traits)
         ActionsHelper.delete_actions(traits)
