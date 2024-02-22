@@ -5,6 +5,8 @@ import json
 
 ## https://docs.blender.org/api/4.0
 
+nfts_traits = []
+
 class ObjectHelper():
     def find_by_collection_suffix_ex(scene, suffix):
         objects = []
@@ -120,8 +122,8 @@ class TraitsHelper:
         
 
 class LookupOp(bpy.types.Operator):
-    bl_idname = "wm.lookup_traits"
-    bl_label = "Lookup Traits"
+    bl_idname = "wm.lookup"
+    bl_label = "Lookup"
 
     def execute(self, context):
         scene = context.scene
@@ -149,10 +151,27 @@ class LookupOp(bpy.types.Operator):
         return {'FINISHED'}
 
 class GenerateOp(bpy.types.Operator):
-    bl_idname = "wm.generate_nfts"
-    bl_label = "Generate NFT's"
+    bl_idname = "wm.generate"
+    bl_label = "Generate"
 
     def execute(self, context):
+        global nfts_traits
+        scene = context.scene
+        settings = scene.na_settings
+        traits_props = scene.na_traits_props
+        
+        num_frames = settings.qtd
+        
+        nfts_traits = TraitsHelper.generate(num_frames, traits_props, scene.objects)
+        
+        return {'FINISHED'}
+
+class ExportOp(bpy.types.Operator):
+    bl_idname = "wm.export"
+    bl_label = "Export"
+
+    def execute(self, context):
+        global nfts_traits
         scene = context.scene
         settings = scene.na_settings
         traits_props = scene.na_traits_props
@@ -174,14 +193,12 @@ class GenerateOp(bpy.types.Operator):
         
         scene.frame_set(1)
         
-        nfts_traits = TraitsHelper.generate(num_frames, traits_props, scene.objects)
-        
         num = 1
         for traits in nfts_traits:
             for trait in traits:
                 KeyframeHelper.insert_hide_render(trait.object, False, num)
             
-            if settings.gen_models:
+            if settings.export_models:
                 ExportHelper.export_gltf(num)
 
             for trait in traits:
@@ -218,7 +235,7 @@ class TraitProps(bpy.types.PropertyGroup):
 
 class SettingsProps(bpy.types.PropertyGroup):
     qtd: bpy.props.IntProperty(name="", default=0)
-    gen_models: bpy.props.BoolProperty(name="", default=True)
+    export_models: bpy.props.BoolProperty(name="", default=True)
 
 class MainPanel(bpy.types.Panel):
     bl_label = "Neural Arena NFT Maker"
@@ -238,9 +255,17 @@ class MainPanel(bpy.types.Panel):
         # rarities
         traits_props = scene.na_traits_props
         layout.label(text="Traits:")
+        last_group = ''
         for i in range(len(traits_props)):
+            trait = traits_props[i]
+            
+            if trait.group != last_group:
+                last_group = trait.group
+                row = layout.row()
+                row.label(text=trait.group, icon='GROUP')
+                
             row = layout.row()
-            row.label(text=traits_props[i].name)
+            row.label(text=trait.name)
             row.prop(traits_props[i], 'probability')
 
         row = layout.row()
@@ -255,8 +280,8 @@ class MainPanel(bpy.types.Panel):
         row.prop(settings, 'qtd')
 
         row = layout.row()
-        row.label(text="Generate models")
-        row.prop(settings, 'gen_models')
+        row.label(text="Export models")
+        row.prop(settings, 'export_models')
         
         row = layout.row()
         row.separator()
@@ -266,18 +291,19 @@ class MainPanel(bpy.types.Panel):
 
         split = layout.split()
         col = split.column()
-        col.operator("wm.lookup_traits")
+        col.operator("wm.lookup")
 
         col = split.column(align=True)
-        col.operator("wm.generate_nfts")
+        col.operator("wm.generate")
 
         split = layout.split()
         col = split.column()
-        col.operator("wm.clean_up")
+        col.operator("wm.export")
 
         col = split.column(align=True)
+        col.operator("wm.clean_up")
 
-classes = [TraitProps, SettingsProps, LookupOp, GenerateOp, CleanupOp, MainPanel]
+classes = [TraitProps, SettingsProps, LookupOp, GenerateOp, ExportOp, CleanupOp, MainPanel]
 
 def register():
     for klass in classes:
@@ -285,8 +311,6 @@ def register():
     
     bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
     bpy.types.Scene.na_settings = bpy.props.PointerProperty(type=SettingsProps)
-    
-
 
 def unregister():
     for klass in classes:
