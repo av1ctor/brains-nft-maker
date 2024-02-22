@@ -63,7 +63,6 @@ class KeyframeHelper:
 class ExportHelper():
     def export_gltf(num):
         models_path = bpy.path.abspath('//models/' + format(num, '03'))
-        print(models_path)
         bpy.ops.export_scene.gltf(
             filepath=models_path, 
             use_visible=True,
@@ -278,28 +277,20 @@ class MainPanel(bpy.types.Panel):
 
         col = split.column(align=True)
 
+classes = [TraitProps, SettingsProps, LookupOp, GenerateOp, CleanupOp, MainPanel]
 
 def register():
-    bpy.utils.register_class(TraitProps)
+    for klass in classes:
+        bpy.utils.register_class(klass)
+    
     bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
-
-    bpy.utils.register_class(SettingsProps)
     bpy.types.Scene.na_settings = bpy.props.PointerProperty(type=SettingsProps)
     
-    bpy.utils.register_class(LookupOp)
-    bpy.utils.register_class(GenerateOp)
-    bpy.utils.register_class(CleanupOp)
-    
-    bpy.utils.register_class(MainPanel)
 
 
 def unregister():
-    bpy.utils.unregister_class(MainPanel)
-    bpy.utils.register_class(CleanupOp)
-    bpy.utils.unregister_class(GenerateOp)
-    bpy.utils.unregister_class(LookupOp)
-    bpy.utils.unregister_class(SettingsProps)
-    bpy.utils.unregister_class(TraitProps)
+    for klass in classes:
+        bpy.utils.unregister_class(klass)
     
 if __name__ == "__main__":
     register()
