@@ -39,55 +39,78 @@ class Trait:
 class TraitHelper:
     def find_all_ex(scene):
         models = {}
-        objects = []
 
         for model in scene.collection.children['Models'].children:
-            models[model.name] = {
-                "model": model
-            }
-            
-            traits = None
+            traits = []
+
+            traits_col = None
             for col in model.children:
                 if col.name.lower().startswith('traits'):
-                    traits = col
+                    traits_col = col
                     break
             
-            if traits != None:
-                for col in traits.children:
+            if traits_col != None:
+                for col in traits_col.children:
                     for obj in col.objects:
-                        objects.append({
+                        traits.append({
                             "object": obj, 
-                            "collection": col, 
-                            "model": model
+                            "collection": col
                         })
                         
-        return (models, objects)
+            models[model.name] = {
+                "model": model,
+                "traits": traits
+            }
+                        
+        return models
 
     def find_all(scene):
+        models = TraitHelper.find_all_ex(scene).items()
+        
+        traits = sum(list(map(
+            lambda model: model[1]['traits'],
+            models    
+        )), [])
+        
         return list(
             map(
                 (lambda item: item['object']), 
-                TraitHelper.find_all_ex(scene)[1]
+                traits    
             )
         )
 
-    def generate(qtd, traits_props, objects):
-        groups = {}
-        for prop in traits_props:
-            group = groups.get(prop.group)
-            if group == None:
-                groups[prop.group] = {
-                    "weights": [prop.probability], 
-                    "props": [prop], 
-                    "model": prop.model
-                }
-            else:
-                group["weights"].append(prop.probability)
-                group["props"].append(prop)
+    def generate(qtd, models_props, traits_props, objects):
+        models_weights = []
+        models_groups = []
+        
+        for model_prop in models_props:
+            groups = {}
+            for prop in filter(
+                    (lambda item: item.model_name == model_prop.name), 
+                    traits_props
+                ):
+                group = groups.get(prop.group_name)
+                if group == None:
+                    groups[prop.group_name] = {
+                        "weights": [prop.probability], 
+                        "props": [prop], 
+                        "model_name": model_prop.name
+                    }
+                else:
+                    group["weights"].append(prop.probability)
+                    group["props"].append(prop)
+                    
+            models_weights.append(model_prop.probability) 
+            models_groups.append(groups)
 
         traits = []
         for num in range(qtd):
             obj_traits = []
+            groups = random.choices(
+                population=models_groups, 
+                weights=models_weights
+            )[0]
+            
             for name, group in groups.items():
                 trait = random.choices(
                     population=group['props'], 
@@ -98,7 +121,7 @@ class TraitHelper:
                     trait.name, 
                     object, 
                     name,
-                    group['model']
+                    group['model_name']
                 ))
                 
             traits.append(obj_traits)
@@ -193,31 +216,31 @@ class LookupOp(bpy.types.Operator):
         models_props.clear()
         traits_props.clear()
 
-        (models, traits) = TraitHelper.find_all_ex(scene)
+        models = TraitHelper.find_all_ex(scene)
         
-        for name in models.keys():
+        for name, model in models.items():
             item = models_props.add()
             item.name = name
             item.probability = 100.0 / len(models)
+            
+            traits = model['traits']
         
-        groups = {}
-        for trait in traits:
-            model_name = trait['model'].name
-            col_name = trait['collection'].name
-            group_name = model_name + '_' + col_name
-            group = groups.get(group_name)
-            if group == None:
-                groups[group_name] = 1.0
-            else:            
-                groups[group_name] += 1.0
+            groups = {}
+            for trait in traits:
+                group_name = name + '_' + trait['collection'].name
+                group = groups.get(group_name)
+                if group == None:
+                    groups[group_name] = 1.0
+                else:            
+                    groups[group_name] += 1.0
 
-        for trait in traits:
-            item = traits_props.add()
-            item.name = trait['object'].name
-            item.group = trait['collection'].name
-            item.model = trait['model'].name
-            item.probability = 100.0 / groups[item.model + '_' + item.group]
-    
+            for trait in traits:
+                item = traits_props.add()
+                item.name = trait['object'].name
+                item.group_name = trait['collection'].name
+                item.model_name = name
+                item.probability = 100.0 / groups[name + '_' + item.group_name]
+        
         return {'FINISHED'}
 
 class GenerateOp(bpy.types.Operator):
@@ -228,11 +251,13 @@ class GenerateOp(bpy.types.Operator):
         global nfts_traits
         scene = context.scene
         settings = scene.na_settings
+        models_props = scene.na_models
         traits_props = scene.na_traits
         
         num_frames = settings.qtd
         
-        nfts_traits = TraitHelper.generate(num_frames, traits_props, scene.objects)
+        nfts_traits = TraitHelper.generate(
+            num_frames, models_props, traits_props, scene.objects)
         
         return {'FINISHED'}
 
@@ -267,7 +292,7 @@ class ExportOp(bpy.types.Operator):
         for traits in nfts_traits:
             for trait in traits:
                 KeyframeHelper.insert_hide_render(trait.object, False, num)
-            
+                
             if settings.export_traits:
                 ExportHelper.export_json(num, traits)
 
@@ -313,8 +338,8 @@ class ModelProps(bpy.types.PropertyGroup):
 class TraitProps(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="")
     probability: bpy.props.FloatProperty(name="Probability", default=0.0)
-    group: bpy.props.StringProperty(name="Group", default="")
-    model: bpy.props.StringProperty(name="Model", default="")
+    group_name: bpy.props.StringProperty(name="Group", default="")
+    model_name: bpy.props.StringProperty(name="Model", default="")
 
 class MainPanel(bpy.types.Panel):
     bl_label = "Neural Arena NFT Maker"
@@ -337,26 +362,28 @@ class MainPanel(bpy.types.Panel):
         layout.label(text="Models:")
         last_model = ''
         last_group = ''
+        box = None
         for trait in traits_props:
-            if trait.model != last_model:
-                last_model = trait.model
+            if trait.model_name != last_model:
+                last_model = trait.model_name
                 row = layout.split()
                 col = row.column()
-                col.label(text=trait.model, icon='OBJECT_DATA')
+                col.label(text=trait.model_name, icon='OBJECT_DATA')
                 col = row.column()
-                model = next((item for item in models_props if item.name == trait.model), None)
+                model = next((item for item in models_props if item.name == trait.model_name), None)
                 col.prop(model, 'probability')
                 box = layout.box()
                 last_group = ''
                 
-            if trait.group != last_group:
-                last_group = trait.group
+            if trait.group_name != last_group:
+                last_group = trait.group_name
                 row = box.row()
-                row.label(text=trait.group, icon='GROUP')
-                
-            row = box.row()
-            row.label(text=trait.name)
-            row.prop(trait, 'probability')
+                row.label(text=trait.group_name, icon='GROUP')
+            
+            if box != None:
+                row = box.row()
+                row.label(text=trait.name)
+                row.prop(trait, 'probability')
 
         row = layout.row()
         row.separator()
