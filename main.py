@@ -91,6 +91,19 @@ class ExportHelper():
             export_morph_reset_sk_data=True,
             export_lights=False,
             export_cameras=False)
+            
+    def export_json(num, traits):
+        num_s = format(num, '03')
+        
+        f = open(bpy.path.abspath('//traits/' + num_s + '.json'), "w")
+        props = {
+            'name': '#' + num_s,
+            'image': num_s + '.jpg',
+            'model': num_s + '.glb',
+            'attributes': list(map((lambda trait: trait.name), traits))
+        }
+        f.write(json.dumps(props))
+        f.close()
 
 class Trait:
     def __init__(self, name, object):
@@ -198,6 +211,9 @@ class ExportOp(bpy.types.Operator):
             for trait in traits:
                 KeyframeHelper.insert_hide_render(trait.object, False, num)
             
+            if settings.export_traits:
+                ExportHelper.export_json(num, traits)
+
             if settings.export_models:
                 ExportHelper.export_gltf(num)
 
@@ -236,6 +252,7 @@ class TraitProps(bpy.types.PropertyGroup):
 class SettingsProps(bpy.types.PropertyGroup):
     qtd: bpy.props.IntProperty(name="", default=0)
     export_models: bpy.props.BoolProperty(name="", default=True)
+    export_traits: bpy.props.BoolProperty(name="", default=True)
 
 class MainPanel(bpy.types.Panel):
     bl_label = "Neural Arena NFT Maker"
@@ -282,6 +299,10 @@ class MainPanel(bpy.types.Panel):
         row = layout.row()
         row.label(text="Export models")
         row.prop(settings, 'export_models')
+
+        row = layout.row()
+        row.label(text="Export traits")
+        row.prop(settings, 'export_traits')
         
         row = layout.row()
         row.separator()
