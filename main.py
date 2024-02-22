@@ -6,13 +6,21 @@ import json
 ## https://docs.blender.org/api/4.0
 
 class ObjectHelper():
-    def find_by_collection_suffix(scene, suffix):
-        traits = []
+    def find_by_collection_suffix_ex(scene, suffix):
+        objects = []
         for coll in scene.collection.children:
             if coll.name.lower().endswith(suffix):
                 for obj in coll.objects:
-                    traits.append(obj)
-        return traits
+                    objects.append({"object": obj, "collection": coll})
+        return objects
+
+    def find_by_collection_suffix(scene, suffix):
+        return list(
+            map(
+                (lambda item: item['object']), 
+                ObjectHelper.find_by_collection_suffix_ex(scene, suffix)
+            )
+        )
 
     def hide_objects(objects):
         for obj in objects:
@@ -83,6 +91,35 @@ class ExportHelper():
             export_lights=False,
             export_cameras=False)
 
+class Trait:
+    def __init__(self, name, object):
+        self.name = name
+        self.object = object
+
+class TraitsHelper:
+    def generate(qtd, traits_props, objects):
+        groups = {}
+        for prop in traits_props:
+            group = groups.get(prop.group)
+            if group == None:
+                groups[prop.group] = {"weights": [prop.probability], "props": [prop]}
+            else:
+                group["weights"].append(prop.probability)
+                group["props"].append(prop)
+
+        traits = []
+        for num in range(qtd):
+            obj_traits = []
+            for k, group in groups.items():
+                trait = random.choices(population=group['props'], weights=group['weights'])[0]
+                object = objects.get(trait.name)
+                obj_traits.append(Trait(trait.name, object))
+                
+            traits.append(obj_traits)
+                
+        return traits
+        
+
 class LookupOp(bpy.types.Operator):
     bl_idname = "wm.lookup_traits"
     bl_label = "Lookup Traits"
@@ -93,11 +130,22 @@ class LookupOp(bpy.types.Operator):
 
         traits_props.clear()
 
-        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
-
-        for obj in traits:
+        traits = ObjectHelper.find_by_collection_suffix_ex(scene, "traits")
+        
+        groups = {}
+        for trait in traits:
+            name = trait['collection'].name
+            group = groups.get(name)
+            if group == None:
+                groups[name] = 1.0
+            else:            
+                groups[name] += 1.0
+                
+        for trait in traits:
             item = traits_props.add()
-            item.name = obj.name
+            item.name = trait['object'].name
+            item.group = trait['collection'].name
+            item.probability = 100.0 / groups[item.group]
     
         return {'FINISHED'}
 
@@ -108,31 +156,41 @@ class GenerateOp(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         settings = scene.na_settings
+        traits_props = scene.na_traits_props
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
+        all_traits = ObjectHelper.find_by_collection_suffix(scene, "traits")
 
-        ObjectHelper.hide_objects(traits)
-        ActionsHelper.delete_actions(traits)
-        KeyframeHelper.delete_all_hide_render(scene, traits)
+        ObjectHelper.hide_objects(all_traits)
+        ActionsHelper.delete_actions(all_traits)
+        KeyframeHelper.delete_all_hide_render(scene, all_traits)
         
         num_frames = settings.qtd
 
         scene.frame_start = 1
         scene.frame_end = num_frames
 
-        KeyframeHelper.insert_all_hide_render(traits, True, 0)
+        KeyframeHelper.insert_all_hide_render(all_traits, True, 0)
         
         scene.frame_set(1)
-        for num in range(1, num_frames+1):
-            trait = random.choice(traits)
-            KeyframeHelper.insert_hide_render(trait, False, num)
+        
+        nfts_traits = TraitsHelper.generate(num_frames, traits_props, scene.objects)
+        
+        num = 1
+        for traits in nfts_traits:
+            for trait in traits:
+                KeyframeHelper.insert_hide_render(trait.object, False, num)
+            
             if settings.gen_models:
                 ExportHelper.export_gltf(num)
-            KeyframeHelper.insert_hide_render(trait, True, num+1)
 
-        ObjectHelper.hide_objects(traits)
+            for trait in traits:
+                KeyframeHelper.insert_hide_render(trait.object, True, num+1)
+                
+            num += 1
+
+        ObjectHelper.hide_objects(all_traits)
 
         return {'FINISHED'}
     
@@ -155,8 +213,9 @@ class CleanupOp(bpy.types.Operator):
         return {'FINISHED'}
 
 class TraitProps(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Name", default="Unknown")
-    probability: bpy.props.FloatProperty(name="Probability", default=10.0)
+    name: bpy.props.StringProperty(name="Name", default="")
+    probability: bpy.props.FloatProperty(name="Probability", default=0.0)
+    group: bpy.props.StringProperty(name="Group", default="")
 
 class SettingsProps(bpy.types.PropertyGroup):
     qtd: bpy.props.IntProperty(name="", default=0)
