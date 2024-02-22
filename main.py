@@ -82,6 +82,7 @@ class ExportHelper():
         f = open(bpy.path.abspath('//traits/' + num_s + '.json'), "w")
         props = {
             'name': '#' + num_s,
+            'model_name': traits[0].model_name,
             'image': num_s + '.jpg',
             'model': num_s + '.glb',
             'attributes': list(
@@ -98,26 +99,33 @@ class ExportHelper():
         f.close()
 
 class Trait:
-    def __init__(self, name, object, group_name):
+    def __init__(self, name, object, group_name, model_name):
         self.name = name
         self.object = object
         self.group_name = group_name
+        self.model_name = model_name
 
 class TraitsHelper:
-    def find_by_model_ex(scene, name):
-        traits = scene.collection.children['Models'].children[name].children['Traits']
+    def find_all_ex(scene):
+        for model in scene.collection.children['Models'].children:
+            traits = model.children['Traits']
         
-        objects = []
-        for coll in traits.children:
-            for obj in coll.objects:
-                objects.append({"object": obj, "collection": coll})
+            objects = []
+            for col in traits.children:
+                for obj in col.objects:
+                    objects.append({
+                        "object": obj, 
+                        "collection": col, 
+                        "model": model
+                    })
+                    
         return objects
 
-    def find_by_model(scene, name):
+    def find_all(scene):
         return list(
             map(
                 (lambda item: item['object']), 
-                TraitsHelper.find_by_model_ex(scene, name)
+                TraitsHelper.find_all_ex(scene)
             )
         )
 
@@ -126,7 +134,11 @@ class TraitsHelper:
         for prop in traits_props:
             group = groups.get(prop.group)
             if group == None:
-                groups[prop.group] = {"weights": [prop.probability], "props": [prop]}
+                groups[prop.group] = {
+                    "weights": [prop.probability], 
+                    "props": [prop], 
+                    "model": prop.model
+                }
             else:
                 group["weights"].append(prop.probability)
                 group["props"].append(prop)
@@ -134,10 +146,18 @@ class TraitsHelper:
         traits = []
         for num in range(qtd):
             obj_traits = []
-            for group_name, group in groups.items():
-                trait = random.choices(population=group['props'], weights=group['weights'])[0]
+            for name, group in groups.items():
+                trait = random.choices(
+                    population=group['props'], 
+                    weights=group['weights']
+                )[0]
                 object = objects.get(trait.name)
-                obj_traits.append(Trait(trait.name, object, group_name))
+                obj_traits.append(Trait(
+                    trait.name, 
+                    object, 
+                    name,
+                    group['model']
+                ))
                 
             traits.append(obj_traits)
                 
@@ -150,26 +170,29 @@ class LookupOp(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        traits_props = scene.na_traits_props
+        traits_props = scene.na_traits
 
         traits_props.clear()
 
-        traits = TraitsHelper.find_by_model_ex(scene, "Robot")
+        traits = TraitsHelper.find_all_ex(scene)
         
         groups = {}
         for trait in traits:
-            name = trait['collection'].name
-            group = groups.get(name)
+            model_name = trait['model'].name
+            col_name = trait['collection'].name
+            group_name = model_name + '_' + col_name
+            group = groups.get(group_name)
             if group == None:
-                groups[name] = 1.0
+                groups[group_name] = 1.0
             else:            
-                groups[name] += 1.0
-                
+                groups[group_name] += 1.0
+
         for trait in traits:
             item = traits_props.add()
             item.name = trait['object'].name
             item.group = trait['collection'].name
-            item.probability = 100.0 / groups[item.group]
+            item.model = trait['model'].name
+            item.probability = 100.0 / groups[item.model + '_' + item.group]
     
         return {'FINISHED'}
 
@@ -181,7 +204,7 @@ class GenerateOp(bpy.types.Operator):
         global nfts_traits
         scene = context.scene
         settings = scene.na_settings
-        traits_props = scene.na_traits_props
+        traits_props = scene.na_traits
         
         num_frames = settings.qtd
         
@@ -197,11 +220,11 @@ class ExportOp(bpy.types.Operator):
         global nfts_traits
         scene = context.scene
         settings = scene.na_settings
-        traits_props = scene.na_traits_props
+        traits_props = scene.na_traits
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        all_traits = TraitsHelper.find_by_model(scene, "Robot")
+        all_traits = TraitsHelper.find_all(scene)
 
         ObjectHelper.hide_objects(all_traits)
         ActionsHelper.delete_actions(all_traits)
@@ -247,7 +270,7 @@ class CleanupOp(bpy.types.Operator):
         
         bpy.ops.object.select_all(action='DESELECT')
         
-        traits = TraitsHelper.find_by_model(scene, "Robot")
+        traits = TraitsHelper.find_all(scene)
 
         ObjectHelper.hide_objects(traits)
         ActionsHelper.delete_actions(traits)
@@ -259,6 +282,7 @@ class TraitProps(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="")
     probability: bpy.props.FloatProperty(name="Probability", default=0.0)
     group: bpy.props.StringProperty(name="Group", default="")
+    model: bpy.props.StringProperty(name="Model", default="")
 
 class SettingsProps(bpy.types.PropertyGroup):
     qtd: bpy.props.IntProperty(name="", default=0)
@@ -281,18 +305,26 @@ class MainPanel(bpy.types.Panel):
         scene = context.scene
 
         # rarities
-        traits_props = scene.na_traits_props
-        layout.label(text="Traits:")
+        traits_props = scene.na_traits
+        layout.label(text="Models:")
+        last_model = ''
         last_group = ''
         for i in range(len(traits_props)):
             trait = traits_props[i]
             
+            if trait.model != last_model:
+                last_model = trait.model
+                row = layout.row()
+                row.label(text=trait.model, icon='OBJECT_DATA')
+                box = layout.box()
+                last_group = ''
+                
             if trait.group != last_group:
                 last_group = trait.group
-                row = layout.row()
+                row = box.row()
                 row.label(text=trait.group, icon='GROUP')
                 
-            row = layout.row()
+            row = box.row()
             row.label(text=trait.name)
             row.prop(traits_props[i], 'probability')
 
@@ -341,7 +373,7 @@ def register():
     for klass in classes:
         bpy.utils.register_class(klass)
     
-    bpy.types.Scene.na_traits_props = bpy.props.CollectionProperty(type=TraitProps)
+    bpy.types.Scene.na_traits = bpy.props.CollectionProperty(type=TraitProps)
     bpy.types.Scene.na_settings = bpy.props.PointerProperty(type=SettingsProps)
 
 def unregister():
