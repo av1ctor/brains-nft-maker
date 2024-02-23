@@ -2,7 +2,7 @@ import bpy
 import random
 import re
 import json
-#import logging
+import logging
 
 #logger = logging.getLogger(__name__)
 #logger.setLevel(logging.DEBUG)
@@ -10,6 +10,8 @@ import json
 #log_path = bpy.path.abspath("//log.txt")
 #log_handler = logging.FileHandler(log_path)
 #logger.addHandler(log_handler)
+
+## https://docs.blender.org/api/4.0
 
 nfts_traits = []
 
@@ -23,10 +25,10 @@ class ActionHelper:
                 
     def find_actions():
         actions = []
-        if bpy.data.actions:
-            frame_ranges = [action.frame_range for action in bpy.data.actions]
-            actions = sorted(set([frame for frames in frame_ranges for frame in frames]))
-            
+
+        frame_ranges = [action.frame_range for action in bpy.data.actions]
+        actions = sorted(set([frame for frames in frame_ranges for frame in frames]))
+        
         return actions
 
 class ObjectHelper():
@@ -220,7 +222,7 @@ class ExportHelper():
             export_format='GLB', 
             export_animations=True,
             export_animation_mode='ACTIONS',
-            export_anim_single_armature=True,
+            export_anim_single_armature=False,
             export_reset_pose_bones=True,
             export_optimize_animation_size=True,
             export_optimize_animation_keep_anim_armature=True,
@@ -234,7 +236,8 @@ class ExportHelper():
             export_morph_tangent=True,
             export_morph_reset_sk_data=True,
             export_lights=False,
-            export_cameras=False)
+            export_cameras=False
+        )
             
     def export_json(num, traits):
         num_s = format(num, '03')
