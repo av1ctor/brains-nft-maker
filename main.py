@@ -207,7 +207,7 @@ class KeyframeHelper:
             KeyframeHelper.delete_objects(ModelHelper.find_all_model_objects(model_col))
                 
 class ExportHelper():
-    def export_gltf(num):
+    def export_gltf(num, model_name):
         models_path = bpy.path.abspath('//models/' + format(num, '03'))
         bpy.ops.export_scene.gltf(
             filepath=models_path, 
@@ -217,9 +217,11 @@ class ExportHelper():
             export_yup=True, 
             export_apply=False, 
             export_materials='EXPORT', 
+            export_image_format='AUTO',
             export_texcoords=True, 
             export_colors=True, 
-            export_format='GLB', 
+            export_format='GLTF_SEPARATE', 
+            export_texture_dir='./textures/' + model_name,
             export_animations=True,
             export_animation_mode='ACTIONS',
             export_anim_single_armature=False,
@@ -365,7 +367,7 @@ class ExportOp(bpy.types.Operator):
                 ExportHelper.export_json(num, traits)
 
             if settings.export_models:
-                ExportHelper.export_gltf(num)
+                ExportHelper.export_gltf(num, model.name)
 
             KeyframeHelper.toggle_model(model, True, num+1)
             for trait in traits:
